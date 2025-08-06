@@ -240,7 +240,8 @@ def list_topics(mcap_file, show_progress=True):
     try:
         topic_info = defaultdict(lambda: {"type": "unknown", "count": 0})
 
-        with open(mcap_file, "rb") as f:
+        open_func = make_open_func(mcap_file)
+        with open_func(mcap_file, "rb") as f:
             reader = mcap_reader.make_reader(f)
 
             # Get summary
@@ -292,8 +293,9 @@ def list_topics(mcap_file, show_progress=True):
 
 def list_idl_definitions(mcap_file, show_progress=True, specific_topics=None):
     """List IDL definitions for all types or specific topics."""
+    open_func = make_open_func(mcap_file)
     try:
-        with open(mcap_file, "rb") as f:
+        with open_func(mcap_file, "rb") as f:
             # Create decoder factory
             decoder_factory = DecoderFactory()
             reader = mcap_reader.make_reader(f, decoder_factories=[decoder_factory])
@@ -444,8 +446,9 @@ def convert_mcap_to_json(mcap_file, output_file=None, show_progress=True, topics
         else:
             output = sys.stdout
 
+        open_func = make_open_func(mcap_file)
         try:
-            with open(mcap_file, "rb") as f:
+            with open_func(mcap_file, "rb") as f:
                 # Create decoder factory
                 decoder_factory = DecoderFactory()
 
@@ -585,6 +588,37 @@ def convert_mcap_to_json(mcap_file, output_file=None, show_progress=True, topics
         sys.exit(1)
 
 
+def get_basename(path):
+    """
+    Gets the basename for the path even when the path has an additional .bz2
+    file extension, like "mushroom.mcap.bz2".
+
+    Args:
+        path (str): The path to the file.
+    Returns:
+        basename (str): The basename of the path.
+    """
+    if path.endswith('.bz2'):
+        path = path[:-4]
+    basename = os.path.splitext(path)[0]
+    return basename
+
+
+def make_open_func(path):
+    """
+    Returns the appropriate open function based on the file extension.
+
+    Args:
+        path (str): The path to the file.
+    Returns:
+        function: The open function to use (bz2.open or open).
+    """
+    if path.endswith('.bz2'):
+        return bz2.open
+    else:
+        return open
+
+
 def process_directory(directory_path, args):
     """Process all MCAP files in a directory recursively.
 
@@ -592,8 +626,10 @@ def process_directory(directory_path, args):
         directory_path: Path to directory containing MCAP files
         args: Command line arguments
     """
-    # Find all MCAP files in the directory recursively
-    mcap_files = glob.glob(os.path.join(directory_path, '**', '*.mcap'), recursive=True)
+    # Find all MCAP files in the directory recursively, including bzip2
+    # compressed files.
+    mcap_files = glob.glob(os.path.join(directory_path, '**', '*.mcap'), recursive=True) + \
+                 glob.glob(os.path.join(directory_path, '**', '*.mcap.bz2'), recursive=True)
 
     if not mcap_files:
         print(f"Error: No MCAP files found in directory '{directory_path}' (searched recursively)", file=sys.stderr)
@@ -604,8 +640,8 @@ def process_directory(directory_path, args):
     # Process each MCAP file
     for i, mcap_file in enumerate(sorted(mcap_files), 1):
         # Generate output filename: basename.json.bz2 in current directory
-        basename = os.path.basename(mcap_file)
-        output_file = os.path.splitext(basename)[0] + '.json.bz2'
+        basename = get_basename(mcap_file)
+        output_file = basename + '.json.bz2'
 
         # Show relative path for better context in recursive mode
         rel_path = os.path.relpath(mcap_file, directory_path)
